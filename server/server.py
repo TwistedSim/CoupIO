@@ -18,8 +18,8 @@ class Game:
         Aborted = auto()
         Finished = auto()
 
-    def __init__(self):
-        self.owner = None
+    def __init__(self, owner):
+        self.owner = owner
         self.uuid = str(uuid.uuid4())
         self.players = []
         self.state = Game.State.Waiting
@@ -27,6 +27,7 @@ class Game:
 
     def is_valid(self):
         return len(self.players) <= 6 and self.state == Game.State.Waiting
+
 
 @sio.event
 async def connect(sid, environ):
@@ -36,13 +37,11 @@ async def connect(sid, environ):
 
 @sio.event
 async def create_game(sid):
-    new_game = Game()
-    new_game.owner = sid
+    new_game = Game(sid)
     current_games[new_game.uuid] = new_game
     await sio.send(f'New game created', room=sid)
     print(f'Client {sid} create a new game {new_game.uuid}')
     return new_game.uuid
-
 
 
 @sio.event
@@ -57,15 +56,17 @@ async def start_game(sid, game_uuid):
         return
 
     game.state = Game.State.Running
+    await sio.send(f'Game {game.uuid} started', room=sid)
+    await sio.emit('game_started', (game.uuid, len(game.players)))
     print(f'Client {sid} start the game {game.uuid}')
 
 
 @sio.event
 async def find_random_game(sid):    
     import random
-    if current_games:
-        game = random.choice(list(current_games.values()))
-        return game.uuid
+    available_games = [game for game in current_games.values() if game.state == Game.State.Waiting]
+    if available_games:
+        return random.choice(available_games).uuid
     else:
         await sio.send(f'No game available')  
 
@@ -86,12 +87,30 @@ async def join_game(sid, game_uuid):
         await sio.emit('player_joined_game', (game_uuid, len(current_games[game_uuid].players), True), room=current_games[game_uuid].owner)
         print(f'Client {sid} join the game {game_uuid}')
 
+
 @sio.event
 async def leave(sid, game_uuid):
     sio.leave_room(sid, game_uuid)
+    current_games[game_uuid].players.remove(sid)
+    
     print(f'Client {sid} left game {game_uuid}')
     await sio.send(f'Left room {game_uuid}', room=sid)
     await sio.send('A player left the game', room=game_uuid)
+
+    if current_games[game_uuid].state == Game.State.Running:
+        current_games[game_uuid].state = Game.State.Aborted           
+    elif sid == current_games[game_uuid].owner:
+        current_games[game_uuid].state = Game.State.Aborted
+        print(f'Game {game_uuid} was closed by the owner')
+        await sio.send(f'Game {game_uuid} was close by owner', room=game_uuid)
+    elif len(current_games[game_uuid].players) == 0:
+        current_games[game_uuid].state = Game.State.Aborted
+        print(f'Game {game_uuid} was removed since there is no player left')
+    
+    if current_games[game_uuid].state == Game.State.Aborted:
+        await sio.send(f'Game was aborted', room=game_uuid)      
+        await sio.emit('game_aborted', game_uuid, room=game_uuid) 
+        await sio.close_room(game_uuid)
 
 @sio.event
 async def disconnect(sid):
