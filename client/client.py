@@ -7,6 +7,7 @@ loop = asyncio.get_event_loop()
 sio = socketio.AsyncClient(reconnection=False)
 current_bot = None
 
+
 class BotInterface:
 
     def __init__(self, game_id=None):
@@ -22,7 +23,7 @@ class BotInterface:
         pass
 
     async def on_end(self, is_winner):
-        pass   
+        pass
 
     async def on_turn(self):
         pass
@@ -34,10 +35,10 @@ class BotInterface:
         pass
 
     async def on_block(self, influence):
-        pass    
+        pass
 
     async def on_challenge(self, succeed):
-        pass    
+        pass
 
 
 @sio.event
@@ -56,7 +57,7 @@ async def join_game(game_id=None):
 
 
 @sio.event
-async def disconnect():  
+async def disconnect():
     print(f'Disconnected')
 
 
@@ -87,12 +88,14 @@ async def start_client(bot: BotInterface):
     current_bot = bot
     await sio.connect('http://localhost:8080')
     await sio.wait()
-     
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Client to play CoupIO')
-    parser.add_argument('-j', '--join', dest='joined_game_id', type=str, help='Join an existing game using the game uuid')
-    parser.add_argument('-r', '--random', dest='is_random', action='store_true', help='Join a random game')
+    parser.add_argument('-j', '--join', dest='joined_game_id',
+                        type=str, help='Join an existing game using the game uuid')
+    parser.add_argument('-r', '--random', dest='is_random',
+                        action='store_true', help='Join a random game')
 
     args = parser.parse_args()
     current_game_id = args.joined_game_id
