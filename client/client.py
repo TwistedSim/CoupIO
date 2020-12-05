@@ -31,13 +31,16 @@ class BotInterface:
     async def on_update(self, game_state):
         pass
 
-    async def on_action(self, action_type):
+    async def on_action(self, sender, target, action_type):
         pass
 
     async def on_block(self, influence):
         pass
 
-    async def on_challenge(self, succeed):
+    async def on_kill(self):
+        pass
+
+    async def on_swap(self, new_cards):
         pass
 
 
@@ -51,7 +54,7 @@ async def connect():
         await join_game(current_game_id)
 
 
-async def join_game(game_id=None):
+async def join_game(game_id):
     if game_id:
         await sio.emit('join_game', game_id)
 
@@ -75,6 +78,11 @@ async def player_joined_game(game_uuid, nb_player, is_game_owner):
 @sio.event
 async def game_started(game_uuid, nb_player):
     await current_bot.on_start(nb_player)
+
+
+@sio.event
+async def kill_influence(game_uuid):
+    await current_bot.on_kill()
 
 
 @sio.event
