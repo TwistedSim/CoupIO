@@ -26,6 +26,7 @@ class Game:
         self.players = {}
         self.status = Game.Status.Waiting
         self.current_turn = 0
+        # TODO: make deck
 
     def add_player(self, sid):
         if sid not in self.players:
@@ -53,22 +54,26 @@ class Game:
             if selected_influence in self.game.players[target]['influences']:
                 self.game.players[target]['influences'].remove(
                     selected_influence)
-            await next_turn()
+            await self.next_turn()
         return inner
 
     async def swap(self, target, count):
         new_cards = ['' for _ in range(count)]  # TODO: draw cards
-        await sio.emit('swap_influence', new_cards, room=target, callback=self.__swap_completed(target, new_cards))
+        await sio.emit('swap_influence', (self.uuid, new_cards), room=target, callback=self.__swap_completed(target, new_cards))
 
     async def __swap_completed(self, target, new_cards):
         async def inner(selected_card):
             # Validate selected card
             # Swap the cards
-            await next_turn()
+            await self.next_turn()
         return inner
 
-    def replace(self, target, influence):
-        pass  # TODO replace the influence with another
+    async def next_turn(self):
+        await next_turn()
+
+
+    async def replace(self, target, influence):
+        await self.game.next_turn()  # TODO replace the influence with another
 
     @property
     def nb_player(self):
@@ -102,6 +107,7 @@ class Income(Action):
 
     async def activate(self, sid, target=None):
         self.game.players[sid]['coins'] += 1
+        await self.game.next_turn()
 
 
 class ForeignAid(Action):
@@ -110,6 +116,7 @@ class ForeignAid(Action):
 
     async def activate(self, sid, target=None):
         self.game.players[sid]['coins'] += 2
+        await self.game.next_turn()
 
 
 class Coup(Action):
@@ -128,12 +135,11 @@ class Influence(Action):
         self.game = game
 
     async def challenge(self, sid) -> bool:
-        succeed = any(type(inf) is type(self)
-                      for inf in self.game.players[sid]['influences'])
+        succeed = any(type(inf) is type(self) for inf in self.game.players[sid]['influences'])
         if succeed:
-            self.game.replace(sid, type(self))
+            await self.game.replace(sid, type(self))
         else:
-            self.game.kill(sid)
+            await self.game.kill(sid)
         return succeed
 
 
@@ -141,6 +147,7 @@ class Duke(Influence):
 
     async def activate(self, sid, target=None):
         self.game.players[sid]['coins'] += 3
+        await self.game.next_turn()
 
 
 class Contessa(Influence):
@@ -160,6 +167,7 @@ class Captain(Influence):
         amount = min(2, self.game.players[target]['coins'])
         self.game.players[target]['coins'] -= amount
         self.game.players[sid]['coins'] += amount
+        await self.game.next_turn()
 
 
 class Assassin(Influence):
@@ -187,6 +195,7 @@ class Ambassador(Influence):
 async def connect(sid, environ):
     print(f'Client {sid} connected')
     await sio.send('Connected to CoupIO server', room=sid)
+    await sio.emit('on_turn', room=sid)
 
 
 @sio.event
