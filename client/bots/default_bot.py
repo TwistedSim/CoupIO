@@ -9,7 +9,7 @@ class DefaultBot(bot_interface.BotInterface):
         self.game_id = game_id
 
     def start_condition(self, nb_player):
-        return nb_player > 2
+        return nb_player > 1
 
     async def start(self, nb_player):
         pass

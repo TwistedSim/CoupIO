@@ -4,7 +4,7 @@ import socketio
 import argparse
 
 import bot_interface
-from client import Client, sio
+from client import Client
 from util import auto_discover_bots
 
 
@@ -24,12 +24,17 @@ discovered_bots = auto_discover_bots()
 if args.bot_name not in discovered_bots:
     raise RuntimeError(f"The bot {args.bot_name} wasn't found in the bots module. Bots found: {list(discovered_bots.keys())}")
 
+
+sio = socketio.AsyncClient(reconnection=False)
+sio.register_namespace(Client())
+
 bot = discovered_bots[args.bot_name](args.host, args.is_random, args.joined_game_id)
 loop = asyncio.get_event_loop()
 
 print(f'The game will be played with {bot.__class__.__name__} on {args.host}')
 
 try:
-    loop.run_until_complete(Client.start(bot))
+    Client.configure(sio, args.host, bot)
+    loop.run_until_complete(Client.start())
 except RuntimeError:
     pass
