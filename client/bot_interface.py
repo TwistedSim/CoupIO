@@ -9,23 +9,23 @@ class BotInterface:
     def start_condition(self, nb_player):
         return nb_player > 2
 
-    async def on_game_start(self, nb_player):
+    async def start(self, nb_player):
         pass
 
     async def on_turn(self):
-        pass
+        raise NotImplementedError()
 
     async def on_update(self, game_state):
-        pass
+        raise NotImplementedError()
 
     async def on_action(self, sender, target, action_type):
-        pass
+        raise NotImplementedError()
 
     async def on_block(self, influence):
-        pass
+        raise NotImplementedError()
 
     async def on_kill_influence(self):
-        pass
+        raise NotImplementedError()
 
     async def on_swap_influence(self, cards):
-        pass
+        raise NotImplementedError()

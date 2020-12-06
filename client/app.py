@@ -3,40 +3,9 @@ import time
 import socketio
 import argparse
 
-import importlib
-import pkgutil
-import inspect
-import sys
-
-from client import Client, sio
 import bot_interface
-import bots
-
-
-def iter_namespace(ns_pkg):
-    return pkgutil.iter_modules(ns_pkg.__path__, ns_pkg.__name__ + ".")
-
-
-def extract_bots(bot_module):
-    return [obj for name, obj in inspect.getmembers(bot_module) if inspect.isclass(obj)]
-
-
-def auto_discover_bots():
-
-    discovered_bot_files = {
-        name: importlib.import_module(name)
-        for finder, name, ispkg
-        in iter_namespace(bots)
-    }
-
-    discovered_bots = {}
-    for name, module in discovered_bot_files.items():
-        for bot in extract_bots(module):
-            if bot.__name__ in discovered_bots:
-                print(f"WARNING: 2 bots with the same name existed ({bot.__name__} in file {name}). The bot will be overiden.")
-            discovered_bots[bot.__name__] = bot
-
-    return discovered_bots
+from client import Client, sio
+from util import auto_discover_bots
 
 
 parser = argparse.ArgumentParser(description='Client to play CoupIO')
@@ -53,7 +22,7 @@ args = parser.parse_args()
 discovered_bots = auto_discover_bots()
 
 if args.bot_name not in discovered_bots:
-    raise NameError(f"The bot {args.bot_name} wasn't found in the bots module. Bots found: {discovered_bots}")
+    raise RuntimeError(f"The bot {args.bot_name} wasn't found in the bots module. Bots found: {list(discovered_bots.keys())}")
 
 bot = discovered_bots[args.bot_name](args.host, args.is_random, args.joined_game_id)
 loop = asyncio.get_event_loop()

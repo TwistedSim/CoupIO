@@ -11,7 +11,7 @@ class DefaultBot(bot_interface.BotInterface):
     def start_condition(self, nb_player):
         return nb_player > 2
 
-    async def on_game_start(self, nb_player):
+    async def start(self, nb_player):
         pass
 
     async def on_turn(self):

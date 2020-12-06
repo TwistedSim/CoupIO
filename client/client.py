@@ -35,6 +35,10 @@ class Client(socketio.AsyncClientNamespace):
         print(msg)
 
 
+    async def on_game_start(self, *args):
+        self.bot.start(*args)
+
+
     async def on_game_aborted(self, game_uuid):
         print("Aborted client")
         await sio.disconnect()
