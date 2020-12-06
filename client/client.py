@@ -2,9 +2,9 @@ import asyncio
 import socketio
 import inspect
 
-from bot import BotInterface 
+from bot_interface import BotInterface 
 
-sio = socketio.AsyncClient(logger=True, reconnection=False)
+sio = socketio.AsyncClient(reconnection=False)
 
 
 class Client(socketio.AsyncClientNamespace):
@@ -17,7 +17,6 @@ class Client(socketio.AsyncClientNamespace):
 
         client_methods = [m[0] for m in inspect.getmembers(Client, predicate=inspect.isfunction) if m[0].startswith('on_')]
         for method in inspect.getmembers(Client.bot, predicate=inspect.ismethod):
-            print(method)
             if method[0] in client_methods:
                 raise NameError(f'A event handler for {method[0]} already exists in the client interface.')
             if method[0].startswith('on_'):

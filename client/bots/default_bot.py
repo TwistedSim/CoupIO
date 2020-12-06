@@ -1,8 +1,10 @@
 
-class BotInterface:
+import bot_interface
+
+class DefaultBot(bot_interface.BotInterface):
 
     def __init__(self, host, join_random_game=False, game_id=None):
-        self.host = 'http://localhost:8080'
+        self.host = host
         self.join_random_game = join_random_game
         self.game_id = game_id
 
