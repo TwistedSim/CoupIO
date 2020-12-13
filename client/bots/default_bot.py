@@ -1,12 +1,7 @@
+from client.bot_interface import BotInterface
 
-import bot_interface
 
-class DefaultBot(bot_interface.BotInterface):
-
-    def __init__(self, host, join_random_game=False, game_id=None):
-        self.host = host
-        self.join_random_game = join_random_game
-        self.game_id = game_id
+class DefaultBot(BotInterface):
 
     def start_condition(self, nb_player):
         return nb_player > 1
@@ -15,15 +10,21 @@ class DefaultBot(bot_interface.BotInterface):
         pass
 
     async def on_turn(self):
-        pass
+        return  # Action, target
 
     async def on_update(self, game_state):
         pass
 
-    async def on_action(self, sender, target, action_type):
+    async def on_action(self, sender, target, action):
+        return
+
+    async def on_block(self, sender, target, block_with):
         pass
 
-    async def on_block(self, influence):
+    async def on_kill(self):
+        pass
+
+    async def on_swap(self, cards):
         pass
 
     async def on_kill_influence(self):

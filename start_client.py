@@ -1,12 +1,9 @@
 import asyncio
-import time
 import socketio
 import argparse
 
-import bot_interface
-from client import Client
-from util import auto_discover_bots
-
+from client.client import Client
+from client.util import auto_discover_bots
 
 parser = argparse.ArgumentParser(description='Client to play CoupIO')
 parser.add_argument('-b', '--bot', dest='bot_name', default='DefaultBot',
