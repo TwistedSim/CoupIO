@@ -22,7 +22,7 @@ if args.bot_name not in discovered_bots:
     raise RuntimeError(f"The bot {args.bot_name} wasn't found in the bots module. Bots found: {list(discovered_bots.keys())}")
 
 
-sio = socketio.AsyncClient(reconnection=False)
+sio = socketio.AsyncClient(reconnection=False, logger=False)
 sio.register_namespace(Client())
 
 bot = discovered_bots[args.bot_name](args.host, args.is_random, args.joined_game_id)

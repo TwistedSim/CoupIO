@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 from typing import Type
 
@@ -23,12 +24,11 @@ class Server(socketio.AsyncNamespace):
             if method[0] in server_methods:
                 raise NameError(f'A event handler for {method[0]} already exists in the server interface.')
             if method[0].startswith('on_'):
-                cls.sio.event(method[1])
+                cls.sio.on(method[0][3:], handler=method[1])
 
     async def on_connect(self, sid, environ):
         print(f'Client {sid} connected')
         await self.sio.send(f'Connected to {Server.game_class.__name__} server', room=sid)
-        await self.sio.emit('on_turn', room=sid)
 
     async def on_create_game(self, sid):
         new_game = self.game_class(self.sio, sid)
@@ -102,7 +102,9 @@ class Server(socketio.AsyncNamespace):
         elif not game.is_ready:
             await self.sio.send(f'The game cannot start until it is ready', room=sid)
         else:
-            await game.start()
             await self.sio.send(f'Game {game.uuid} started', room=game_uuid)
             await self.sio.emit('game_started', (game.uuid, game.nb_player))
             print(f'Client {sid} start the game {game.uuid}')
+            await game.start()
+            print(f'Game {game_uuid} is completed.')
+            await self.sio.close_room(game.uuid)

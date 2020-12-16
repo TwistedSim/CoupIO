@@ -1,7 +1,12 @@
+import random
+
 from client.bot_interface import BotInterface
+from games.coup import Duke
 
 
 class DefaultBot(BotInterface):
+
+    game_state = None
 
     def start_condition(self, nb_player):
         return nb_player > 1
@@ -10,10 +15,13 @@ class DefaultBot(BotInterface):
         pass
 
     async def on_turn(self):
-        return  # Action, target
+        print('event received')
+        return Duke(), int(random.choice(list(self.game_state['others'].keys())))
 
     async def on_update(self, game_state):
-        pass
+        print('update')
+        print(game_state)
+        self.game_state = game_state
 
     async def on_action(self, sender, target, action):
         return

@@ -1,9 +1,10 @@
 import asyncio
+import random
 import uuid
+from abc import abstractmethod
 
 from itertools import cycle, count
 from enum import Enum, auto
-from random import shuffle
 
 
 class Game:
@@ -13,18 +14,21 @@ class Game:
         Aborted = auto()
         Finished = auto()
 
-    class Action:
+    class Action(dict):
 
-        def __init__(self, game: 'GameInterface'):
-            self.game = game
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+            self['type'] = type(self).__name__
+            self['args'] = args
+            self['kwargs'] = kwargs
 
-        async def counter(self):
-            self.game.block_action = True
+        def __str__(self):
+            return type(self).__name__
 
-        async def validate(self, sid, target) -> bool:
+        async def validate(self, game: 'GameInterface', sid, target) -> bool:
             return True
 
-        async def activate(self, sid, target):
+        async def activate(self, game: 'GameInterface', sid, target):
             raise NotImplementedError()
 
     class Player:
@@ -32,7 +36,32 @@ class Game:
         def __init__(self, sid, pid):
             self.sid = sid
             self.pid = pid
+            self.alive = True
             self.state = {}
+
+    class Deck(list):
+
+        def __init__(self, cards):
+            super().__init__()
+            self.cards = cards[:]
+            self.reset()
+
+        def reset(self):
+            self.clear()
+            self.extend(self.cards[:])
+            self.shuffle()
+
+        def take(self, n=1):
+            for _ in range(n):
+                yield self.pop()
+
+        def replace(self, card):
+            self.append(card)
+            self.shuffle()
+            return next(self.take(1))
+
+        def shuffle(self):
+            random.shuffle(self)
 
 
 class GameInterface:
@@ -52,29 +81,59 @@ class GameInterface:
         self.pid_generator = count(0)
 
     async def add_player(self, sid):
-        if sid not in self.players:
-            # Make sure new player public id is unique in this game
-            self.players[sid] = Game.Player(sid, next(self.pid_generator))
+        async with self.lock:
+            if sid not in self.players:
+                # Make sure new player public id is unique in this game
+                self.players[sid] = Game.Player(sid, int(next(self.pid_generator)))
 
     async def remove_player(self, sid):
-        if sid in self.players:
-            self.players.pop(sid)
+        async with self.lock:
+            if sid in self.players:
+                self.players.pop(sid)
 
+    @abstractmethod
     async def next_turn(self):
-        self.current_player = self.players[next(self.player_order)]
-        await self.update()
+        raise NotImplementedError()
 
     async def start(self):
-        self.status = Game.Status.Running
-        self.player_order = cycle(shuffle(self.players.keys()))
+        async with self.lock:
+            self.status = Game.Status.Running
+            player_sid = list(self.players.keys())
+            random.shuffle(player_sid)
+            self.player_order = cycle(player_sid)
+            while self.status == Game.Status.Running:
+                winners = [p for p, v in self.players.items() if v.alive]
+                if len(winners) == 1:
+                    self.status = Game.Status.Finished
+                else:
+                    await self._next_turn()
+
+        print(f'Client {winners[0]} won the game {self.uuid}')
+        await self.sio.emit('game_ended', self.players[winners[0]].pid, room=self.uuid)
+
+    async def _next_turn(self):
+        self.current_player = self.players[next(self.player_order)]
+
+        while not self.current_player.alive:
+            self.current_player = self.players[next(self.player_order)]
+
+        await self.update()
         await self.next_turn()
 
     async def update(self):
         state = {'current_player': self.current_player.pid}
-        for p in self.players:
-            state['others'] = {p.pid: p.public_state}
-            state['you'] = p.private_state
-            self.sio.emit('update', state, room=p.sid)
+        for player in self.players.values():
+            # TODO make public and private state
+            state['others'] = {p.pid: self.convert_to_str(p.state) for p in self.players.values() if p.pid != player.pid}
+            state['you'] = self.convert_to_str(player.state)
+            await self.sio.emit('update', state, room=player.sid)
+
+    @staticmethod
+    def convert_to_str(dict_):
+        return {key.__name__ if type(key) not in {int, str} else key: GameInterface.convert_to_str(value) if type(value) is dict else value for key, value in dict_.items()}
+
+    def pid_to_sid(self, pid):
+        return next(filter(lambda p: self.players[p].pid == pid, self.players))
 
     @property
     def nb_player(self):
