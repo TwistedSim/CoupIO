@@ -108,8 +108,9 @@ class GameInterface:
                 else:
                     await self._next_turn()
 
-        print(f'Client {winners[0]} won the game {self.uuid}')
+        print(f'Player {self.players[winners[0]].pid} won the game.')
         await self.sio.emit('game_ended', self.players[winners[0]].pid, room=self.uuid)
+        return winners[0]
 
     async def _next_turn(self):
         self.current_player = self.players[next(self.player_order)]
@@ -124,8 +125,8 @@ class GameInterface:
         state = {'current_player': self.current_player.pid}
         for player in self.players.values():
             # TODO make public and private state
-            state['others'] = {p.pid: p.state for p in self.players.values() if p.pid != player.pid}
-            state['you'] = player.state
+            state['others'] = {p.pid: {'id': p.pid, 'alive': p.alive, **p.state} for p in self.players.values() if p.pid != player.pid}
+            state['you'] = {'id': player.pid, 'alive': player.alive, **player.state}
             await self.sio.emit('update', state, room=player.sid)
 
     def pid_to_sid(self, pid):

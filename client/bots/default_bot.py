@@ -9,21 +9,25 @@ class DefaultBot(BotInterface):
     game_state = None
 
     def start_condition(self, nb_player):
-        return nb_player > 1
+        return nb_player > 3
 
     async def start(self, nb_player):
         pass
 
     async def on_turn(self):
+
         if self.game_state['you']['coins'] >= 7:
-            return Coup(), int(random.choice(list(self.game_state['others'].keys())))
-        elif self.game_state['you']['coins'] >=5:
-            return Captain(), int(random.choice(list(self.game_state['others'].keys())))
-        else:
-            return Duke(), int(random.choice(list(self.game_state['others'].keys())))
+            alive_players_id = [int(p) for p in self.game_state['others'] if self.game_state['others'][p]['alive']]
+            print(alive_players_id, self.game_state['others'])
+            return Coup(), random.choice(alive_players_id)
+
+        action = random.choice([Duke(), Captain()])
+
+        alive_players_id = [int(p) for p in self.game_state['others'] if self.game_state['others'][p]['alive']]
+        return action, random.choice(alive_players_id)
 
     async def on_update(self, game_state):
-        print(game_state['you'])
+        #print(game_state['you'])
         self.game_state = game_state
 
     async def on_action(self, sender, target, action):
@@ -33,7 +37,8 @@ class DefaultBot(BotInterface):
         pass
 
     async def on_kill(self):
-        return random.choice(self.game_state['you']['influences'])[0]['type']
+        alive_influences = [inf[0]['type'] for inf in self.game_state['you']['influences'] if inf[1] is True]
+        return random.choice(alive_influences)
 
     async def on_swap(self, cards):
         pass

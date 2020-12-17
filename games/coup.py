@@ -62,6 +62,10 @@ class CoupGame(GameInterface):
 
         target = self.pid_to_sid(target_pid)
 
+        if target and self.is_player_dead(target):
+            await self.sio.send(f'Selected player is dead: {target_pid}', room=self.current_player.sid)
+            return
+
         if not await action.validate(self, sid, target):
             await self.sio.send(f'Invalid action', room=self.current_player.sid)
             return
@@ -91,14 +95,14 @@ class CoupGame(GameInterface):
                     'action',
                     data=(self.current_player.pid, target_pid, self.current_action['type']),
                     room=self.uuid,
-                    skip_sid=self.current_player.sid
+                    #  skip_sid=self.current_player.sid
                 )
             elif type(self.current_action) in {Assassin, Captain, Ambassador, Duke, ForeignAid}:
                 await self.sio.emit(
                     'action',
                     data=(self.current_player.pid, target_pid, self.current_action['type']),
                     room=self.uuid,
-                    skip_sid=self.current_player.sid,
+                    #  skip_sid=self.current_player.sid,
                     #  callback=self.on_react  TODO add reaction
                 )
             if target_pid is not None:
@@ -109,7 +113,7 @@ class CoupGame(GameInterface):
 
     async def kill(self, target):
         #  Shortcut if player only have one card left
-        if any(filter(lambda x: x[1] is True, self.players[target].state['influences'])):
+        if self.player_influence_alive(target) > 1:
             selected_influence = await self.sio.call('kill', to=target)
             influence = await self.deserialize_action(selected_influence)
             if influence is not None:
@@ -159,6 +163,12 @@ class CoupGame(GameInterface):
         for influence in self.players[target].state['influences']:
             influence[1] = False
         self.players[target].alive = False
+
+    def player_influence_alive(self, sid):
+        return len(list(filter(lambda x: x[1] is True, self.players[sid].state['influences'])))
+
+    def is_player_dead(self, sid):
+        return self.player_influence_alive(sid) == 0
 
 
 class Challenge(Game.Action):
