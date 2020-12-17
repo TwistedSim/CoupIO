@@ -33,7 +33,7 @@ class DefaultBot(BotInterface):
         pass
 
     async def on_kill(self):
-        return random.choice(self.game_state['you']['influences'])[0]
+        return random.choice(self.game_state['you']['influences'])[0]['type']
 
     async def on_swap(self, cards):
         pass

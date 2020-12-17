@@ -124,13 +124,9 @@ class GameInterface:
         state = {'current_player': self.current_player.pid}
         for player in self.players.values():
             # TODO make public and private state
-            state['others'] = {p.pid: self.convert_to_str(p.state) for p in self.players.values() if p.pid != player.pid}
-            state['you'] = self.convert_to_str(player.state)
+            state['others'] = {p.pid: p.state for p in self.players.values() if p.pid != player.pid}
+            state['you'] = player.state
             await self.sio.emit('update', state, room=player.sid)
-
-    @staticmethod
-    def convert_to_str(dict_):
-        return {key.__name__ if type(key) not in {int, str} else key: GameInterface.convert_to_str(value) if type(value) is dict else value for key, value in dict_.items()}
 
     def pid_to_sid(self, pid):
         if pid is not None:
