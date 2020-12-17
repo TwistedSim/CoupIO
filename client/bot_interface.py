@@ -31,9 +31,9 @@ class BotInterface(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    async def on_kill_influence(self):
+    async def on_kill(self):
         raise NotImplementedError()
 
     @abstractmethod
-    async def on_swap_influence(self, cards):
+    async def on_swap(self, cards):
         raise NotImplementedError()

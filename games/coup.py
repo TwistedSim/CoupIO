@@ -27,12 +27,19 @@ class CoupGame(GameInterface):
         self.deck.reset()
         for p in self.players:
             self.players[p].state['coins'] = 2
-            self.players[p].state['influences'] = dict.fromkeys(self.deck.take(2), {'alive': True})
+            self.players[p].state['influences'] = [(card, True) for card in self.deck.take(2)]
         await super().start()
 
-    async def validate_action(self, test_action, sid, target_pid):
+    async def deserialize_action(self, action):
         try:
-            action_type = getattr(sys.modules[__name__], test_action['type'])
+            if type(action) is dict:
+                action_type = getattr(sys.modules[__name__], action['type'])
+            elif type(action) is str:
+                action_type = getattr(sys.modules[__name__], action)
+                action = {'type': action, 'args': [], 'kwargs': {}}
+            else:
+                await self.sio.send(f'Invalid action', room=self.current_player.sid)
+                return
         except (KeyError, ModuleNotFoundError):
             return
 
@@ -40,7 +47,14 @@ class CoupGame(GameInterface):
             await self.sio.send(f'Invalid action', room=self.current_player.sid)
             return
 
-        action = action_type(*test_action['args'], **test_action['kwargs'])
+        return action_type(*action['args'], **action['kwargs'])
+
+    async def validate_action(self, test_action, sid, target_pid):
+
+        action = await self.deserialize_action(test_action)
+
+        if action is None:
+            return
 
         if target_pid is not None and target_pid not in (self.players[p].pid for p in self.players):
             await self.sio.send(f'Invalid player selected: {target_pid}', room=self.current_player.sid)
@@ -52,7 +66,7 @@ class CoupGame(GameInterface):
             await self.sio.send(f'Invalid action', room=self.current_player.sid)
             return
 
-        return action_type(*action['args'], **action['kwargs'])
+        return action
 
     async def next_turn(self):
         self.current_action = None
@@ -68,6 +82,10 @@ class CoupGame(GameInterface):
         if self.current_action is None:
             await self.eliminate(self.current_player.sid)
         else:
+
+            if type(self.current_action) in {Income, ForeignAid, Ambassador, Duke}:
+                target_pid = None
+
             if type(self.current_action) in {Coup, Income}:
                 await self.sio.emit(
                     'action',
@@ -83,7 +101,10 @@ class CoupGame(GameInterface):
                     skip_sid=self.current_player.sid,
                     #  callback=self.on_react  TODO add reaction
                 )
-            print(f'{self.current_player.sid} use action {self.current_action} on player {target_pid}')
+            if target_pid is not None:
+                print(f'Player {self.current_player.pid} use action {self.current_action} on player {target_pid}')
+            else:
+                print(f'Player {self.current_player.pid} use action {self.current_action}')
             await self.current_action.activate(self, self.current_player.sid, self.pid_to_sid(target_pid))
 
     async def challenge(self, sid, target):
@@ -96,16 +117,21 @@ class CoupGame(GameInterface):
             await self.kill(sid)
 
     async def kill(self, target):
-        self.sio.send(f'Player {self.players[target].pid}\'s influence got killed', room=self.uuid)
         #  Shortcut if player only have one card left
-        if all(map(lambda inf: inf.alive, self.players[target].state['influences'])):
+        if any(map(lambda inf: self.players[target].state['influences'][inf]['alive'], self.players[target].state['influences'])):
             selected_influence = await self.sio.call('kill', to=target)
-            if selected_influence in self.players[target].state['influences']:
-                self.players[target].state['influences'][selected_influence].alive = False
-            else:
-                await self.eliminate(target)
-        else:
+            influence = await self.deserialize_action(selected_influence)
+            if influence is not None:
+                if (influence.__class__, True) in self.players[target].state['influences']:
+                    idx = self.players[target].state['influences'].index((influence.__class__, True))
+                    self.players[target].state['influences'][idx][1] = False
+                    await self.sio.send(f'Player {self.players[target].pid} remove the {influence["type"]} from his influences', room=self.uuid)
+                    print(f'Player {self.players[target].pid} removed the {influence["type"]}')
+                    return
+            await self.sio.send(f'Invalid influence returned: {selected_influence}', room=self.players[target].sid)
             await self.eliminate(target)
+        else:
+            await self.eliminate(target, invalid_action=False)
 
     async def swap(self, target, count):
         new_cards = ['' for _ in range(count)]  # TODO: draw cards
@@ -124,7 +150,12 @@ class CoupGame(GameInterface):
         # return if block succeed
         pass
 
-    async def eliminate(self, target):
+    async def eliminate(self, target, invalid_action=True):
+        print(f'Player {self.players[target].pid} was eliminated. invalid_action={invalid_action}')
+        if invalid_action:
+            await self.sio.send(f'Player {self.players[target].pid} was eliminated for an invalid action.', room=self.uuid)
+        else:
+            await self.sio.send(f'Player {self.players[target].pid} is eliminate.', room=self.uuid)
         for influence in self.players[target].state['influences'].values():
             influence['alive'] = False
         self.players[target].alive = False
@@ -153,20 +184,20 @@ class ForeignAid(Game.Action):
 
     async def validate(self, game: CoupGame, sid, target=None) -> bool:
         return game.current_action is None \
-               and game.players[sid]['coins'] < 10
+               and game.players[sid].state['coins'] < 10
 
     async def activate(self, game: CoupGame, sid, target=None):
-        game.players[sid]['coins'] += 2
+        game.players[sid].state['coins'] += 2
 
 
 class Coup(Game.Action):
     
     async def validate(self, game: CoupGame, sid, target=None) -> bool:
         return game.current_action is None \
-               and game.players[sid]['coins'] >= 7
+               and game.players[sid].state['coins'] >= 7
 
     async def activate(self, game: CoupGame, sid, target=None):
-        game.players[sid]['coins'] -= 7
+        game.players[sid].state['coins'] -= 7
         await game.kill(target)
 
 

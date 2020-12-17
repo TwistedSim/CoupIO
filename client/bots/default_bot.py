@@ -1,7 +1,7 @@
 import random
 
 from client.bot_interface import BotInterface
-from games.coup import Duke
+from games.coup import Duke, Coup, Captain
 
 
 class DefaultBot(BotInterface):
@@ -15,28 +15,25 @@ class DefaultBot(BotInterface):
         pass
 
     async def on_turn(self):
-        print('event received')
-        return Duke(), int(random.choice(list(self.game_state['others'].keys())))
+        if self.game_state['you']['coins'] >= 7:
+            return Coup(), int(random.choice(list(self.game_state['others'].keys())))
+        elif self.game_state['you']['coins'] >=5:
+            return Captain(), int(random.choice(list(self.game_state['others'].keys())))
+        else:
+            return Duke(), int(random.choice(list(self.game_state['others'].keys())))
 
     async def on_update(self, game_state):
-        print('update')
-        print(game_state)
+        print(game_state['you'])
         self.game_state = game_state
 
     async def on_action(self, sender, target, action):
-        return
+        print(f'Player {sender} use {action} on {target}')
 
     async def on_block(self, sender, target, block_with):
         pass
 
     async def on_kill(self):
-        pass
+        return random.choice(self.game_state['you']['influences'])[0]
 
     async def on_swap(self, cards):
-        pass
-
-    async def on_kill_influence(self):
-        pass
-
-    async def on_swap_influence(self, cards):
         pass

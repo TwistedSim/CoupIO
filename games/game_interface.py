@@ -133,7 +133,8 @@ class GameInterface:
         return {key.__name__ if type(key) not in {int, str} else key: GameInterface.convert_to_str(value) if type(value) is dict else value for key, value in dict_.items()}
 
     def pid_to_sid(self, pid):
-        return next(filter(lambda p: self.players[p].pid == pid, self.players))
+        if pid is not None:
+            return next(filter(lambda p: self.players[p].pid == pid, self.players))
 
     @property
     def nb_player(self):
