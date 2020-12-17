@@ -65,8 +65,11 @@ class Game:
 
 
 class GameInterface:
+
     MinPlayer = 2
     MaxPlayer = 10
+
+    Actions = {}
 
     def __init__(self, sio, owner):
         self.sio = sio
@@ -75,6 +78,7 @@ class GameInterface:
         self.players = {}
         self.status = Game.Status.Waiting
         self.current_player = None
+        self.current_action = None
         self.lock = asyncio.Lock()
         self.actions = []
         self.player_order = None
@@ -92,7 +96,11 @@ class GameInterface:
                 self.players.pop(sid)
 
     @abstractmethod
-    async def next_turn(self):
+    async def next_turn(self, action, target_pid):
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def is_player_dead(self, target):
         raise NotImplementedError()
 
     async def start(self):
@@ -114,12 +122,26 @@ class GameInterface:
 
     async def _next_turn(self):
         self.current_player = self.players[next(self.player_order)]
+        self.current_action = None
+        target_pid = None
 
         while not self.current_player.alive:
             self.current_player = self.players[next(self.player_order)]
 
         await self.update()
-        await self.next_turn()
+
+        try:
+            action, target_pid = await self.sio.call('turn', to=self.current_player.sid)
+        except TypeError as err:
+            action = None
+            print(err)
+
+        self.current_action = await self.validate_action(action, self.current_player.sid, target_pid)
+
+        if self.current_action is None:
+            await self.eliminate(self.current_player.sid)
+        else:
+            await self.next_turn(self.current_action, target_pid)
 
     async def update(self):
         state = {'current_player': self.current_player.pid}
@@ -128,6 +150,51 @@ class GameInterface:
             state['others'] = {p.pid: {'id': p.pid, 'alive': p.alive, **p.state} for p in self.players.values() if p.pid != player.pid}
             state['you'] = {'id': player.pid, 'alive': player.alive, **player.state}
             await self.sio.emit('update', state, room=player.sid)
+
+    async def eliminate(self, target, invalid_action=True):
+        print(f'Player {self.players[target].pid} was eliminated. invalid_action={invalid_action}')
+        self.players[target].alive = False
+        if invalid_action:
+            await self.sio.send(f'Player {self.players[target].pid} was eliminated for an invalid action.', room=self.uuid)
+        else:
+            await self.sio.send(f'Player {self.players[target].pid} is eliminate.', room=self.uuid)
+
+    async def deserialize_action(self, action):
+        if type(action) is dict:
+            action_type = self.Actions.get(action['type'])
+        elif type(action) is str:
+            action_type = self.Actions.get(action)
+            action = {'type': action, 'args': [], 'kwargs': {}}
+        else:
+            await self.sio.send(f'Invalid action', room=self.current_player.sid)
+            return
+
+        if not issubclass(action_type, Game.Action):
+            await self.sio.send(f'Invalid action', room=self.current_player.sid)
+            return
+
+        return action_type(*action['args'], **action['kwargs'])
+
+    async def validate_action(self, test_action, sid, target_pid):
+        action = await self.deserialize_action(test_action)
+
+        if action is None:
+            return
+        elif target_pid is not None and target_pid not in (self.players[p].pid for p in self.players):
+            await self.sio.send(f'Invalid player selected: {target_pid}', room=self.current_player.sid)
+            return
+
+        target = self.pid_to_sid(target_pid)
+
+        if target and self.is_player_dead(target):
+            await self.sio.send(f'Selected player is dead: {target_pid}', room=self.current_player.sid)
+            return
+
+        if not await action.validate(self, sid, target):
+            await self.sio.send(f'Invalid action', room=self.current_player.sid)
+            return
+
+        return action
 
     def pid_to_sid(self, pid):
         if pid is not None:

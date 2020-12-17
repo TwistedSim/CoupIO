@@ -1,2 +1,2 @@
 
-from games.coup import CoupGame
+from games.Coup.coup import CoupGame
