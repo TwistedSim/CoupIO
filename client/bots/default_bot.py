@@ -1,6 +1,7 @@
 import random
 
 from client.bot_interface import BotInterface
+from games import CoupGame
 from games.Coup.actions import Coup, Duke, Captain
 
 
@@ -27,7 +28,9 @@ class DefaultBot(BotInterface):
         return action, random.choice(alive_players_id)
 
     async def on_update(self, game_state):
+        # If an influence from another player is not dead, it will be shown as a generic Action
         self.game_state = game_state
+        print(self.game_state, sep='\n')
 
     async def on_action(self, sender, target, action):
         #  answer with an action to block or to challenge, otherwise pass
@@ -39,8 +42,8 @@ class DefaultBot(BotInterface):
 
     async def on_kill(self):
         # When one of your influence is killed, choose which one you remove
-        alive_influences = [inf[0]['type'] for inf in self.game_state['you']['influences'] if inf[1] is True]
-        return random.choice(alive_influences)
+        alive_influences = [inf['action']['type'] for inf in self.game_state['you']['influences'] if inf['alive']]
+        return CoupGame.Actions[random.choice(alive_influences)]()
 
     async def on_swap(self, cards):
         # When you win a challenge or if you use the ambassador

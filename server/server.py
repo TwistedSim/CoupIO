@@ -105,6 +105,7 @@ class Server(socketio.AsyncNamespace):
             await self.sio.send(f'Game {game.uuid} started', room=game_uuid)
             await self.sio.emit('game_started', (game.uuid, game.nb_player))
             print(f'Client {sid} start the game {game.uuid}')
+            # TODO start the game in another loop with a different socket.io namespace according to the game
             await game.start()
             print(f'Game {game_uuid} is completed.')
             await self.sio.close_room(game.uuid)

@@ -5,6 +5,7 @@ from abc import abstractmethod
 
 from itertools import cycle, count
 from enum import Enum, auto
+from typing import Dict
 
 
 class Game:
@@ -38,6 +39,17 @@ class Game:
             self.pid = pid
             self.alive = True
             self.state = {}
+            self.obfuscator = None
+
+        @property
+        def public_state(self):
+            public_state = {}
+            for key, val in self.state.items():
+                if self.obfuscator:
+                    public_state[key] = self.obfuscator(key, val)
+                else:
+                    public_state[key] = val
+            return public_state
 
     class Deck(list):
 
@@ -65,7 +77,6 @@ class Game:
 
 
 class GameInterface:
-
     MinPlayer = 2
     MaxPlayer = 10
 
@@ -75,7 +86,7 @@ class GameInterface:
         self.sio = sio
         self.owner = owner
         self.uuid = str(uuid.uuid4())
-        self.players = {}
+        self.players: Dict[str, Game.Player] = {}
         self.status = Game.Status.Waiting
         self.current_player = None
         self.current_action = None
@@ -146,8 +157,8 @@ class GameInterface:
     async def update(self):
         state = {'current_player': self.current_player.pid}
         for player in self.players.values():
-            # TODO make public and private state
-            state['others'] = {p.pid: {'id': p.pid, 'alive': p.alive, **p.state} for p in self.players.values() if p.pid != player.pid}
+            state['others'] = {p.pid: {'id': p.pid, 'alive': p.alive, **p.public_state}
+                               for p in self.players.values() if p.pid != player.pid}
             state['you'] = {'id': player.pid, 'alive': player.alive, **player.state}
             await self.sio.emit('update', state, room=player.sid)
 
@@ -155,16 +166,14 @@ class GameInterface:
         print(f'Player {self.players[target].pid} was eliminated. invalid_action={invalid_action}')
         self.players[target].alive = False
         if invalid_action:
-            await self.sio.send(f'Player {self.players[target].pid} was eliminated for an invalid action.', room=self.uuid)
+            msg = f'Player {self.players[target].pid} was eliminated for an invalid action.'
         else:
-            await self.sio.send(f'Player {self.players[target].pid} is eliminate.', room=self.uuid)
+            msg = f'Player {self.players[target].pid} is eliminate.'
+        await self.sio.send(msg, room=self.uuid)
 
-    async def deserialize_action(self, action):
+    async def deserialize_action(self, action: dict):
         if type(action) is dict:
             action_type = self.Actions.get(action['type'])
-        elif type(action) is str:
-            action_type = self.Actions.get(action)
-            action = {'type': action, 'args': [], 'kwargs': {}}
         else:
             await self.sio.send(f'Invalid action', room=self.current_player.sid)
             return
@@ -175,7 +184,7 @@ class GameInterface:
 
         return action_type(*action['args'], **action['kwargs'])
 
-    async def validate_action(self, test_action, sid, target_pid):
+    async def validate_action(self, test_action: dict, sid, target_pid):
         action = await self.deserialize_action(test_action)
 
         if action is None:
@@ -197,6 +206,7 @@ class GameInterface:
         return action
 
     def pid_to_sid(self, pid):
+        # public id to socket id
         if pid is not None:
             return next(filter(lambda p: self.players[p].pid == pid, self.players))
 
