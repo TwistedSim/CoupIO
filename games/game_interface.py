@@ -97,13 +97,13 @@ class GameInterface:
 
     async def add_player(self, sid):
         async with self.lock:
-            if sid not in self.players:
+            if sid not in self.players and self.status == Game.Status.Waiting:
                 # Make sure new player public id is unique in this game
                 self.players[sid] = Game.Player(sid, int(next(self.pid_generator)))
 
     async def remove_player(self, sid):
         async with self.lock:
-            if sid in self.players:
+            if sid in self.players and self.status == Game.Status.Waiting:
                 self.players.pop(sid)
 
     @abstractmethod
@@ -208,7 +208,7 @@ class GameInterface:
     def pid_to_sid(self, pid):
         # public id to socket id
         if pid is not None:
-            return next(filter(lambda p: self.players[p].pid == pid, self.players))
+            return next(sid for sid in self.players if self.players[sid].pid == pid)
 
     @property
     def nb_player(self):

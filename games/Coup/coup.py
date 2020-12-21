@@ -89,7 +89,7 @@ class CoupGame(GameInterface):
             selected_influence = await self.sio.call('kill', to=target)
             action = await self.deserialize_action(selected_influence)
             if action is not None:
-                influences = list(map(lambda i: i.action, self.players[target].state['influences']))
+                influences = [influence.action for influence in self.players[target].state['influences']]
                 if action in influences:
                     idx = influences.index(action)
                     self.players[target].state['influences'][idx].alive = False
@@ -110,7 +110,7 @@ class CoupGame(GameInterface):
         # TODO: replace card in deck
 
     async def replace(self, target, action: Game.Action):
-        actions = list(map(lambda i: i.action, self.players[target].state['influences']))
+        actions = [influence.action for influence in self.players[target].state['influences']]
         idx = actions.index(action)
         self.players[target].state['influences'][idx] = Influence(self.deck.replace(action))
 
@@ -131,7 +131,7 @@ class CoupGame(GameInterface):
             influence.alive = False
 
     def player_influence_alive(self, sid):
-        return len(list(filter(lambda x: x.alive, self.players[sid].state['influences'])))
+        return len([influence.alive for influence in self.players[sid].state['influences']])
 
     def is_player_dead(self, sid):
         return self.player_influence_alive(sid) == 0
