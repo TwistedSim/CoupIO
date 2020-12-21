@@ -22,7 +22,7 @@ class Client(socketio.AsyncClientNamespace):
             if method[0] in client_methods:
                 raise NameError(f'A event handler for {method[0]} already exists in the client interface.')
             if method[0].startswith('on_'):
-                cls.sio.on(method[0][3:], handler=method[1])
+                cls.sio.on(method[0].replace('on_', '', 1), handler=method[1])
 
     @classmethod
     async def start(cls):

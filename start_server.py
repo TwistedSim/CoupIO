@@ -6,7 +6,7 @@ from server.server import Server
 
 app = web.Application()
 
-sio = socketio.AsyncServer(async_mode='aiohttp', logger=False)
+sio = socketio.AsyncServer(async_mode='aiohttp', logger=False)  # TODO use custom json encoder for action
 sio.register_namespace(Server())
 sio.attach(app)
 

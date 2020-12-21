@@ -147,6 +147,7 @@ class GameInterface:
             action = None
             print(err)
 
+        action = await self._deserialize_action(action)
         self.current_action = await self.validate_action(action, self.current_player.sid, target_pid)
 
         if self.current_action is None:
@@ -171,21 +172,25 @@ class GameInterface:
             msg = f'Player {self.players[target].pid} is eliminate.'
         await self.sio.send(msg, room=self.uuid)
 
-    async def deserialize_action(self, action: dict):
-        if type(action) is dict:
-            action_type = self.Actions.get(action['type'])
-        else:
-            await self.sio.send(f'Invalid action', room=self.current_player.sid)
+    @classmethod
+    async def deserialize_action(cls, action: dict):
+        if not type(action) is dict:
             return
 
+        action_type = cls.Actions.get(action['type'])
+
         if not issubclass(action_type, Game.Action):
-            await self.sio.send(f'Invalid action', room=self.current_player.sid)
             return
 
         return action_type(*action['args'], **action['kwargs'])
 
-    async def validate_action(self, test_action: dict, sid, target_pid):
-        action = await self.deserialize_action(test_action)
+    async def _deserialize_action(self, action: dict):
+        action = await self.deserialize_action(action)
+        if action is None:
+            await self.sio.send(f'Invalid action', room=self.current_player.sid)
+        return action
+
+    async def validate_action(self, action: Game.Action, sid, target_pid):
 
         if action is None:
             return

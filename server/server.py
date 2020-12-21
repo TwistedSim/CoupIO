@@ -1,9 +1,9 @@
 import asyncio
 import inspect
-from typing import Type
-
 import socketio
 import random
+
+from typing import Type
 
 from games.game_interface import GameInterface, Game
 
@@ -13,6 +13,7 @@ class Server(socketio.AsyncNamespace):
     current_games = {}
     game_class = None 
     sio = None
+    start_lock = asyncio.Lock()
 
     @classmethod
     def configure(cls, sio: socketio.Server, game: Type[GameInterface]):
@@ -95,17 +96,20 @@ class Server(socketio.AsyncNamespace):
         print(f'Client {sid} disconnected')
 
     async def on_start_game(self, sid, game_uuid):
-        game = self.current_games[game_uuid]
+        async with self.start_lock:
+            game = self.current_games[game_uuid]
+            if game.owner != sid:
+                await self.sio.send(f'Only the owner of the game can start the game', room=sid)
+            elif not game.is_ready:
+                await self.sio.send(f'The game cannot start until it is ready', room=sid)
+            else:
+                await self.sio.send(f'Game {game.uuid} started', room=game_uuid)
+                await self.sio.emit('game_started', (game.uuid, game.nb_player))
+                print(f'Client {sid} started the game {game.uuid}')
+                # TODO start the game in another loop with a different socket.io namespace according to the game
 
-        if game.owner != sid:
-            await self.sio.send(f'Only the owner of the game can start the game', room=sid)
-        elif not game.is_ready:
-            await self.sio.send(f'The game cannot start until it is ready', room=sid)
-        else:
-            await self.sio.send(f'Game {game.uuid} started', room=game_uuid)
-            await self.sio.emit('game_started', (game.uuid, game.nb_player))
-            print(f'Client {sid} start the game {game.uuid}')
-            # TODO start the game in another loop with a different socket.io namespace according to the game
-            await game.start()
-            print(f'Game {game_uuid} is completed.')
-            await self.sio.close_room(game.uuid)
+                await game.start()
+                print(f'Game {game.uuid} is completed.')
+                await self.sio.close_room(game.uuid)
+
+
