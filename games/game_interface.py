@@ -151,7 +151,7 @@ class GameInterface:
         self.current_action = await self.validate_action(action, self.current_player.sid, target_pid)
 
         if self.current_action is None:
-            await self.eliminate(self.current_player.sid)
+            await self.eliminate(self.current_player.sid, reason='Invalid turn response')
         else:
             await self.next_turn(self.current_action, target_pid)
 
@@ -163,17 +163,20 @@ class GameInterface:
             state['you'] = {'id': player.pid, 'alive': player.alive, **player.state}
             await self.sio.emit('update', state, room=player.sid)
 
-    async def eliminate(self, target, invalid_action=True):
-        print(f'Player {self.players[target].pid} was eliminated. invalid_action={invalid_action}')
+    async def eliminate(self, target, invalid_action=True, reason=None):
         self.players[target].alive = False
+        msg = f'Player {self.players[target].pid} was eliminated.'
         if invalid_action:
-            msg = f'Player {self.players[target].pid} was eliminated for an invalid action.'
-        else:
-            msg = f'Player {self.players[target].pid} is eliminate.'
+            msg.strip('.')
+            msg += f' for an invalid_action.'
+        if reason:
+            msg += ' Reason: ' + reason
+        print(msg)
         await self.sio.send(msg, room=self.uuid)
 
     @classmethod
     async def deserialize_action(cls, action: dict):
+        # TODO replace with custom json encoder/decoder in socketio
         if not type(action) is dict:
             return
 

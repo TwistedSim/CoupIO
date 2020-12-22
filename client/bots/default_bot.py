@@ -1,8 +1,10 @@
 import random
+from typing import Tuple
 
 from client.bot_interface import BotInterface
 from games import CoupGame
 from games.Coup.actions import Coup, Duke, Captain, Challenge, ForeignAid, Income, Assassin
+from games.game_interface import Game
 
 
 class DefaultBot(BotInterface):
@@ -12,6 +14,7 @@ class DefaultBot(BotInterface):
 
     def start_condition(self, nb_player):
         # Condition for a game owner to start the current game. Not use if you are not the game owner
+        # TODO make this a command line argument
         return nb_player > 3
 
     async def start(self, nb_player):
@@ -62,15 +65,24 @@ class DefaultBot(BotInterface):
             elif (type(influences[0]) is Assassin or type(influences[1]) is Assassin) and type(action) is Assassin:
                 return Challenge()
 
+        #  Randomly block ForeignAid
+        if type(action) is ForeignAid:
+            if random.random() > 0.9:
+                return Duke()
+
     async def on_block(self, sender, target, block_with):
-        # When the action you just play is block, answer with a challenge or pass
-        pass
+        action = await CoupGame.deserialize_action(block_with)
+        print(f'Player {sender} tried to block player {target} with {action}')
+        print(target, self.game_state['you']['id'])
+        if target == self.game_state['you']['id']:
+            return Challenge()
 
     async def on_kill(self):
         # When one of your influence is killed, choose which one you remove
         alive_influences = [await CoupGame.deserialize_action(inf['action']) for inf in self.game_state['you']['influences'] if inf['alive']]
         return random.choice(alive_influences)
 
-    async def on_swap(self, cards):
+    async def on_swap(self, cards: Tuple[Game.Action]):
         # if you use the ambassador
-        pass
+        print(cards)
+        return cards

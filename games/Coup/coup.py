@@ -48,6 +48,7 @@ class CoupGame(GameInterface):
         self.reaction_lock = asyncio.Lock()
         self.has_answer = None
         self.challenger = None
+        self.blocker = None
 
     @staticmethod
     def player_obfuscator(key, val):
@@ -72,94 +73,119 @@ class CoupGame(GameInterface):
 
     async def next_turn(self, action, target_pid):
         self.blocked_action = False
-        self.has_answer = {sid: False for sid in self.alive_players if sid != self.current_player.sid}
-        self.is_resolved.clear()
         self.challenger = None
+        self.blocker = None
 
         if target_pid is not None:
             print(f'Player {self.current_player.pid} tried to use action {self.current_action} on player {target_pid}')
         else:
             print(f'Player {self.current_player.pid} tried to use action {self.current_action}')
 
+        target = self.pid_to_sid(target_pid)
+
+        await self.send_action(self.current_player.sid, target, action=self.current_action)
+
+        await self.resolve()
+
+        if self.challenger:
+            # The first reaction was a challenge
+            self.blocked_action = not await self.challenge(self.challenger, self.current_player.sid, self.current_action)
+
+        elif self.blocker:
+            # The first reaction was a block
+            self.blocked_action = True
+            print(f'Player {self.players[self.blocker[0]].pid} tried to block player {self.current_player.pid} with {self.blocker[1]}')
+            await self.send_action(self.blocker[0], self.current_player.sid, action=self.blocker[1], is_block=True)
+            await self.resolve()
+            if self.challenger:
+                self.blocked_action = await self.challenge(self.challenger, self.blocker[0], self.blocker[1])
+            else:
+                print('Nobody challenged the block')
+                await self.sio.send('Nobody challenged the block', room=self.uuid)
+        if self.blocked_action:
+            print(f'Player {self.current_player.pid} action {self.current_action} was blocked.')
+            await self.sio.send(f'Player {self.current_player.pid} action {self.current_action} was blocked.', room=self.uuid)
+        else:
+            print(f'Player {self.current_player.pid} action {self.current_action} was activate.')
+            await self.sio.send(f'Player {self.current_player.pid} action {self.current_action} was activate.', room=self.uuid)
+            await self.current_action.activate(self, self.current_player.sid, self.pid_to_sid(target_pid))
+
+    async def send_action(self, sender, target, action: Game.Action, is_block=False):
+        self.has_answer = {sid: False for sid in self.alive_players if sid != self.players[sender].sid}
+
         players_to_send = list(self.players.keys())
         random.shuffle(players_to_send)  # Do not always ask the same player first
+
+        event = 'block' if is_block else 'action'
+        target_pid = self.players[target].pid if target else None
+        sender_pid = self.players[sender].pid
+
         for sid in players_to_send:
-            if self.current_player.sid == sid or not self.players[sid].alive:
+            if self.players[sender].sid == sid or not self.players[sid].alive:
                 await self.sio.emit(
-                    'action',
-                    data=(self.current_player.pid, target_pid, self.current_action),
+                    event,
+                    data=(sender_pid, target_pid, action),
                     to=sid
                 )
             else:
                 #  This is a workaround the callback that does not contains the client socket id
                 await self.sio.emit(
-                    'action',
-                    data=(self.current_player.pid, target_pid, self.current_action),
+                    event,
+                    data=(sender_pid, target_pid, action),
                     to=sid,
-                    callback=functools.partial(self.reaction, sid)
+                    callback=functools.partial(self.reaction, sid, action)
                 )
 
-        try:
-            await asyncio.wait_for(self.is_resolved.wait(), timeout=1.0)
-        except asyncio.TimeoutError:
-            print('Reaction has timeout')
+    async def reaction(self, sid, current_action: Game.Action, answer: Optional[Game.Action] = None):
 
-        if self.challenger:
-            await self.challenge(self.challenger, self.current_player.sid, self.current_action)
-
-        if self.blocked_action:
-            print(f'Player {self.current_player.pid} action {self.current_action} was blocked.')
-        else:
-            print(f'Player {self.current_player.pid} action {self.current_action} was activate.')
-            await self.current_action.activate(self, self.current_player.sid, self.pid_to_sid(target_pid))
-
-    async def reaction(self, sid, action: Optional[Game.Action] = None):
         self.has_answer[sid] = True
         if all(answer for answer in self.has_answer.values()):
             async with self.reaction_lock:
                 self.is_resolved.set()
                 return
-        if action is None:
+
+        if answer is None:
             return
+
         async with self.reaction_lock:
             if self.is_resolved.is_set():
                 return
-            action = await self.deserialize_action(action)
+            answer = await self.deserialize_action(answer)
 
-            if action is None:
-                await self.eliminate(sid)
+            if answer is None:
+                await self.eliminate(sid, reason='Invalid response')
 
-            elif type(action) is Challenge:
-                if type(self.current_action) in {Income, ForeignAid, Coup}:  # Non-Challengeable action
-                    await self.eliminate(sid)
-                elif sid == self.current_player:
-                    #  A player cannot challenge himself
-                    await self.eliminate(sid)
-                    self.blocked_action = True
-                    self.is_resolved.set()
+            elif type(answer) is Challenge:
+                if type(current_action) in {Income, ForeignAid, Coup}:  # Non-Challengeable action
+                    await self.eliminate(sid, reason=f'Tried to challenge a {current_action}')
                 else:
                     self.challenger = sid
                     self.is_resolved.set()
 
-            elif type(action) is Captain:
-                if not type(self.current_action) is Captain:
-                    await self.eliminate(sid)
-
-            elif type(action) is Ambassador:
-                if not type(self.current_action) is Captain:
-                    await self.eliminate(sid)
-
-            elif type(action) is Duke:
-                if not type(self.current_action) is ForeignAid:
-                    await self.eliminate(sid)
-
-            elif type(action) is Contessa:
-                if not type(self.current_action) is Assassin:
-                    await self.eliminate(sid)
+            elif type(answer) in {Captain, Duke, Contessa}:
+                if self.blocker is not None:
+                    await self.eliminate(sid, reason='An action was already block this turn')
+                elif type(current_action) is Captain and type(answer) is Captain:
+                    self.blocker = (sid, answer)
+                elif type(current_action) is Captain and type(answer) is Ambassador:
+                    self.blocker = (sid, answer)
+                elif type(current_action) is ForeignAid and type(answer) is Duke:
+                    self.blocker = (sid, answer)
+                elif type(current_action) is Assassin and type(answer) is Contessa:
+                    self.blocker = (sid, answer)
+                else:
+                    await self.eliminate(sid, reason=f'Invalid influence to block the current action {current_action}')
 
             else:
-                # Invalid action was answer
-                await self.eliminate(sid)
+                await self.eliminate(sid, reason='Invalid action returned')
+
+    async def resolve(self, timeout=1.0):
+        try:
+            await asyncio.wait_for(self.is_resolved.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            print('Reaction has timeout')
+        finally:
+            self.is_resolved.clear()
 
     async def kill(self, target):
         #  Shortcut if player only have one card left
@@ -175,9 +201,9 @@ class CoupGame(GameInterface):
                     print(f'Player {self.players[target].pid} removed the {action["type"]}')
                     return
             await self.sio.send(f'Invalid influence returned: {selected_influence}', room=self.players[target].sid)
-            await self.eliminate(target)
+            await self.eliminate(target, reason='Invalid influence returned')
         else:
-            await self.eliminate(target, invalid_action=False)
+            await self.eliminate(target, invalid_action=False, reason='Player have no more influence')
 
     async def swap(self, target, count):
         new_cards = list(self.deck.take(count))
@@ -195,23 +221,23 @@ class CoupGame(GameInterface):
         print(f'Player {self.players[target].pid} {action} was replaced with {new_action}')
 
     async def challenge(self, sid, target, action: Game.Action):
-        print(f'Player {self.players[target].pid} was challenged by {self.players[sid].pid}')
-        await self.sio.send(f'Player {self.players[target].pid} was challenged by {self.players[sid].pid}', room=self.uuid)
+        #  This function return True if target won the challenge (target have the influence)
+        print(f'Player {self.players[target].pid} was challenged by player {self.players[sid].pid}')
+        await self.sio.send(f'Player {self.players[target].pid} was challenged by player {self.players[sid].pid}', room=self.uuid)
         succeed = any(inf.alive and type(inf.action) is type(action) for inf in self.players[target].state['influences'])
         if succeed:  # TODO inform the players the result of the challenge
-            self.blocked_action = False
             print(f'Player {self.players[target].pid} won the challenge')
             await self.sio.send(f'Player {self.players[target].pid} won the challenge', room=self.uuid)
             await self.replace(target, action)
             await self.kill(sid)
         else:
-            self.blocked_action = True
             print(f'Player {self.players[target].pid} lost the challenge')
             await self.sio.send(f'Player {self.players[target].pid} lost the challenge', room=self.uuid)
             await self.kill(target)
+        return succeed
 
-    async def eliminate(self, target, invalid_action=True):
-        await super().eliminate(target, invalid_action)
+    async def eliminate(self, target, invalid_action=True, reason=None):
+        await super().eliminate(target, invalid_action, reason)
         for influence in self.players[target].state['influences']:
             influence.alive = False
 
