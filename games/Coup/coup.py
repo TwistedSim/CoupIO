@@ -76,27 +76,33 @@ class CoupGame(GameInterface):
         self.is_resolved.clear()
         self.challenger = None
 
-        players_to_send = self.alive_players[:]
-        players_to_send.remove(self.current_player.sid)
-        random.shuffle(players_to_send)  # Do not always ask the same player first
-        for sid in players_to_send:
-            #  This is a workaround the callback that does not contains the client socket id
-            await self.sio.emit(
-                'action',
-                data=(self.current_player.pid, target_pid, self.current_action),
-                to=sid,
-                callback=functools.partial(self.reaction, sid)
-            )
-
-        try:
-            await asyncio.wait_for(self.is_resolved.wait(), timeout=10.0)
-        except asyncio.TimeoutError:
-            print('Reaction has timeout')
-
         if target_pid is not None:
             print(f'Player {self.current_player.pid} tried to use action {self.current_action} on player {target_pid}')
         else:
             print(f'Player {self.current_player.pid} tried to use action {self.current_action}')
+
+        players_to_send = list(self.players.keys())
+        random.shuffle(players_to_send)  # Do not always ask the same player first
+        for sid in players_to_send:
+            if self.current_player.sid == sid or not self.players[sid].alive:
+                await self.sio.emit(
+                    'action',
+                    data=(self.current_player.pid, target_pid, self.current_action),
+                    to=sid
+                )
+            else:
+                #  This is a workaround the callback that does not contains the client socket id
+                await self.sio.emit(
+                    'action',
+                    data=(self.current_player.pid, target_pid, self.current_action),
+                    to=sid,
+                    callback=functools.partial(self.reaction, sid)
+                )
+
+        try:
+            await asyncio.wait_for(self.is_resolved.wait(), timeout=1.0)
+        except asyncio.TimeoutError:
+            print('Reaction has timeout')
 
         if self.challenger:
             await self.challenge(self.challenger, self.current_player.sid, self.current_action)
@@ -184,13 +190,15 @@ class CoupGame(GameInterface):
     async def replace(self, target, action: Game.Action):
         actions = [influence.action for influence in self.players[target].state['influences']]
         idx = actions.index(action)
-        self.players[target].state['influences'][idx] = Influence(self.deck.replace(action))
+        new_action = self.deck.replace(action)
+        self.players[target].state['influences'][idx] = Influence(new_action)
+        print(f'Player {self.players[target].pid} {action} was replaced with {new_action}')
 
     async def challenge(self, sid, target, action: Game.Action):
         print(f'Player {self.players[target].pid} was challenged by {self.players[sid].pid}')
         await self.sio.send(f'Player {self.players[target].pid} was challenged by {self.players[sid].pid}', room=self.uuid)
         succeed = any(inf.alive and type(inf.action) is type(action) for inf in self.players[target].state['influences'])
-        if succeed:
+        if succeed:  # TODO inform the players the result of the challenge
             self.blocked_action = False
             print(f'Player {self.players[target].pid} won the challenge')
             await self.sio.send(f'Player {self.players[target].pid} won the challenge', room=self.uuid)

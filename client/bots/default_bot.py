@@ -53,13 +53,14 @@ class DefaultBot(BotInterface):
         if sender == self.game_state['you']['id']:
             return
 
-        influences = [await CoupGame.deserialize_action(inf['action']) for inf in self.game_state['you']['influences']]
-        if type(influences[0]) is Captain and type(influences[0]) is Captain and type(action) is Captain:
-            return Challenge()
-        elif type(influences[0]) is Duke and type(influences[0]) is Duke and type(action) is Duke:
-            return Challenge()
-        elif type(influences[0]) is Assassin and type(influences[0]) is Assassin and type(action) is Assassin:
-            return Challenge()
+        if target == self.game_state['you']['id']:
+            influences = [await CoupGame.deserialize_action(inf['action']) for inf in self.game_state['you']['influences']]
+            if (type(influences[0]) is Captain or type(influences[1]) is Captain) and type(action) is Captain:
+                return Challenge()
+            elif (type(influences[0]) is Duke or type(influences[1]) is Duke) and type(action) is Duke:
+                return Challenge()
+            elif (type(influences[0]) is Assassin or type(influences[1]) is Assassin) and type(action) is Assassin:
+                return Challenge()
 
     async def on_block(self, sender, target, block_with):
         # When the action you just play is block, answer with a challenge or pass
@@ -67,9 +68,9 @@ class DefaultBot(BotInterface):
 
     async def on_kill(self):
         # When one of your influence is killed, choose which one you remove
-        alive_influences = [inf['action']['type'] for inf in self.game_state['you']['influences'] if inf['alive']]
-        return CoupGame.Actions[random.choice(alive_influences)]()
+        alive_influences = [await CoupGame.deserialize_action(inf['action']) for inf in self.game_state['you']['influences'] if inf['alive']]
+        return random.choice(alive_influences)
 
     async def on_swap(self, cards):
-        # When you win a challenge or if you use the ambassador
+        # if you use the ambassador
         pass
