@@ -17,7 +17,7 @@ class DefaultBot(CoupInterface):
     def start_condition(self, nb_player):
         # Condition for a game owner to start the current game. Not use if you are not the game owner
         # TODO make this a command line argument
-        return nb_player > 3
+        return nb_player > 5
 
     async def start(self, nb_player):
         # Raise when the game start. Initialize stuff here.
@@ -72,11 +72,12 @@ class DefaultBot(CoupInterface):
 
     async def on_action(self, sender, target, action):
         #  answer with an action to block or to challenge, otherwise pass
+        print('-'*50)
         action = CoupGame.deserialize_action(action)
         if target is None:
             print(f'Player {sender} use {action["type"]}')
         else:
-            print(f'Player {sender} use {action["type"]} on {target}')
+            print(f'Player {sender} use {action["type"]} on player {target}')
 
         if sender == self.my_player_id or not self.is_alive:
             return
@@ -91,7 +92,7 @@ class DefaultBot(CoupInterface):
             if random.random() > 0.9:
                 return Duke()
 
-        # Can only block the Assassin or the captain for ourself. Cannot block them for other player
+        # Can only block the Assassin or the captain for our self. Cannot block them for other player
         if target == self.my_player_id:
             if type(action) is Assassin:
                 if random.random() > 0.5:

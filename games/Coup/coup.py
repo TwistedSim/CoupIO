@@ -92,10 +92,12 @@ class CoupGame(GameInterface):
         self.challenger = None
         self.blocker = None
 
+        print('-------------------------------------------------')
+
         if target_pid is not None:
-            print(f'Player {self.current_player.pid} tried to use action {self.current_action} on player {target_pid}')
+            print(f'Player {self.current_player.pid} tried to use {self.current_action} on player {target_pid}')
         else:
-            print(f'Player {self.current_player.pid} tried to use action {self.current_action}')
+            print(f'Player {self.current_player.pid} tried to use {self.current_action}')
 
         target = self.pid_to_sid(target_pid)
 
@@ -181,7 +183,7 @@ class CoupGame(GameInterface):
                     for sid, has_answer in self.has_answer.items():
                         if not has_answer:
                             await self.eliminate(sid, reason='Timed out during action event')
-            print('Reaction is resolved')
+            print('==== Reaction is resolved ====')
 
     async def _reaction_handler(self, sid, target, current_action: Game.Action, answer: Optional[Dict] = None):
         self.has_answer[sid] = True
@@ -258,8 +260,11 @@ class CoupGame(GameInterface):
                     return
             await self.sio.send(f'Invalid influence returned: {selected_influence}', room=self.players[target].sid)
             await self.eliminate(target, reason='Invalid influence returned')
-        else:
+        elif len(self.player_influence_alive(target)) == 1:
             await self.eliminate(target, invalid_action=False, reason='Player have no more influence')
+        else:
+            # Player already eliminated
+            pass
 
     async def swap(self, sid, count):
         cards = tuple(self.deck.take(count))
