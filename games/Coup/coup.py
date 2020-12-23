@@ -91,7 +91,7 @@ class CoupGame(GameInterface):
         self.blocked_action = False
         self.challenger = None
         self.blocker = None
-
+        print(len(self.deck))
         if target_pid is not None:
             print(f'Player {self.current_player.pid} tried to use action {self.current_action} on player {target_pid}')
         else:
@@ -137,6 +137,7 @@ class CoupGame(GameInterface):
 
         target_pid = self.players[target].pid if target else None
         sender_pid = self.players[sender].pid
+        self.has_answer = {sid: False for sid in self.alive_players if sid != sender}
 
         # Optimization: No reaction for those action
         if type(action) in {Coup, Income}:
@@ -146,8 +147,6 @@ class CoupGame(GameInterface):
                 to=self.uuid
             )
             return
-
-        self.has_answer = {sid: False for sid in self.alive_players if sid != sender}
 
         players_to_send = list(self.players.keys())
         random.shuffle(players_to_send)  # Do not always ask the same player first
@@ -163,12 +162,12 @@ class CoupGame(GameInterface):
                     to=sid
                 )
             else:
-                #  This is a workaround the callback that does not contains the client socket id
                 await self.sio.emit(
                     event,
                     data=(sender_pid, target_pid, action),
                     to=sid,
-                    callback=functools.partial(self._reaction_handler, sid, action)
+                    # This is a workaround the callback that does not contains the client socket id
+                    callback=functools.partial(self._reaction_handler, sid, target, action)
                 )
 
         try:
@@ -184,9 +183,9 @@ class CoupGame(GameInterface):
                             await self.eliminate(sid, reason='Timed out during action event')
             print('Reaction is resolved')
 
-    async def _reaction_handler(self, sid, current_action: Game.Action, answer: Optional[Dict] = None):
+    async def _reaction_handler(self, sid, target, current_action: Game.Action, answer: Optional[Dict] = None):
         self.has_answer[sid] = True
-        print(f'Received answer {answer["type"] if answer else None} from player {self.players[sid].pid}')
+        # print(f'Received answer {answer["type"] if answer else None} from player {self.players[sid].pid}')
         async with self.reaction_lock:
             if answer is not None and not self.is_resolved.is_set():
 
@@ -196,30 +195,39 @@ class CoupGame(GameInterface):
                     await self.eliminate(sid, reason='Invalid response')
 
                 elif type(answer) is Challenge:
-                    print(f'Received challenge from player {self.players[sid].pid}')
                     if type(current_action) in {Income, ForeignAid, Coup}:  # Non-Challengeable action
                         await self.eliminate(sid, reason=f'Tried to challenge a {current_action}')
-                    elif self.blocker is not None:
-                        print(f'Late challenge by player {self.players[sid].pid}. Action already challenged by {self.players[self.blocker[0]].pid}')
                     else:
                         self.challenger = sid
                         self.is_resolved.set()
 
                 elif type(answer) in {Captain, Duke, Contessa, Inquisitor, Ambassador}:
-                    print(f'Received block from player {self.players[sid].pid}')
-                    if self.blocker is not None:
-                        print(f'Late block by player {self.players[sid].pid}. Action already blocked by {self.players[self.blocker[0]].pid}')
-                        # await self.eliminate(sid, reason='An action was already block this turn')
+                    if self.challenger is not None:  # Cannot have a block after a challenge
+                        print(f'Late block by player {self.players[sid].pid}. Action already challenged by {self.players[self.challenger].pid}')
+                    elif self.blocker is not None:
+                        print(f'Action already blocked by {self.players[self.blocker[0]].pid}')
                     elif type(current_action) is Captain and type(answer) is Captain:
-                        self.blocker = (sid, answer)
+                        if sid == target:
+                            self.blocker = (sid, answer)
+                        else:
+                            await self.eliminate(sid, reason='Cannot block the Captain for someone else')
                     elif type(current_action) is Captain and type(answer) is Ambassador:
-                        self.blocker = (sid, answer)
+                        if sid == target:
+                            self.blocker = (sid, answer)
+                        else:
+                            await self.eliminate(sid, reason='Cannot block the Captain for someone else')
                     elif type(current_action) is Captain and type(answer) is Inquisitor:
-                        self.blocker = (sid, answer)
+                        if sid == target:
+                            self.blocker = (sid, answer)
+                        else:
+                            await self.eliminate(sid, reason='Cannot block the Captain for someone else')
                     elif type(current_action) is ForeignAid and type(answer) is Duke:
                         self.blocker = (sid, answer)
                     elif type(current_action) is Assassin and type(answer) is Contessa:
-                        self.blocker = (sid, answer)
+                        if sid == target:
+                            self.blocker = (sid, answer)
+                        else:
+                            await self.eliminate(sid, reason='Cannot block the Assassin for someone else')
                     else:
                         await self.eliminate(sid, reason=f'Invalid influence to block the current action {current_action}')
 
@@ -271,8 +279,7 @@ class CoupGame(GameInterface):
             self.deck.shuffle()
             return
 
-        print(f'Player {self.players[sid].pid} received {[str(card) for card in cards]}')
-        print(f'Player {self.players[sid].pid} discarded {[str(card) for card in discarded_cards]}')
+        print(f'Player {self.players[sid].pid} received {[str(card) for card in cards]} and discarded {[str(card) for card in discarded_cards]}')
 
         if len(discarded_cards) != count:
             await self.eliminate(sid, reason=f'Invalid number of card returned in swap. Expected: {count}. Actual: {len(discarded_cards)}')
@@ -307,7 +314,8 @@ class CoupGame(GameInterface):
         if not self.players[target].alive:
             msg = f'Targeted player {self.players[target].pid} is now dead, skipping...'
             print(msg)
-            self.sio.send(msg, to=self.uuid)
+            await self.sio.send(msg, to=self.uuid)
+            return
         try:
             card = await self.sio.call(CoupGame.Event.Lookup.value, to=target, timeout=self.ActionTimeout)
             card = self.deserialize_action(card)

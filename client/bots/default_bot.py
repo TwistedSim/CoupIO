@@ -90,18 +90,21 @@ class DefaultBot(CoupInterface):
         if type(action) is ForeignAid:
             if random.random() > 0.9:
                 return Duke()
-        if type(action) is Assassin:
-            if random.random() > 0.9:
-                return Contessa()
-        if type(action) is Captain:
-            if random.random() > 0.9:
-                return random.choice((Inquisitor(), Captain()))
+
+        # Can only block the Assassin or the captain for ourself. Cannot block them for other player
+        if target == self.my_player_id:
+            if type(action) is Assassin:
+                if random.random() > 0.5:
+                    return Contessa()
+            if type(action) is Captain:
+                if random.random() > 0.9:
+                    return random.choice((Inquisitor(), Captain()))
 
     async def on_block(self, sender, target, block_with):
         action = CoupGame.deserialize_action(block_with)
         print(f'Player {sender} tried to block player {target} with {action}')
         # Randomly challenge block
-        if random.random() > 0.9:
+        if random.random() > 0.8:
             print(f'Challenge from {self.my_player_id}!')
             return Challenge()
 
