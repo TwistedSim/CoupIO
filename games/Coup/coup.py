@@ -91,7 +91,7 @@ class CoupGame(GameInterface):
         self.blocked_action = False
         self.challenger = None
         self.blocker = None
-        print(len(self.deck))
+
         if target_pid is not None:
             print(f'Player {self.current_player.pid} tried to use action {self.current_action} on player {target_pid}')
         else:
@@ -303,7 +303,8 @@ class CoupGame(GameInterface):
                 return
 
         for card, discarded in match:
-            self.deck.append(card)
+            if discarded:
+                self.deck.append(card)
         self.deck.shuffle()
 
         self.players[sid].state['influences'] = [inf for inf in self.players[sid].state['influences'] if not inf.alive]
