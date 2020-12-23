@@ -7,6 +7,8 @@ from itertools import cycle, count
 from enum import Enum, auto
 from typing import Dict
 
+from socketio import exceptions
+
 
 class Game:
     class Status(Enum):
@@ -20,8 +22,9 @@ class Game:
         def __init__(self, *args, **kwargs):
             super().__init__()
             self['type'] = type(self).__name__
-            self['args'] = args
-            self['kwargs'] = kwargs
+            # TODO: implement action arguments
+            # self['args'] = args
+            # self['kwargs'] = kwargs
 
         def __str__(self):
             return type(self).__name__
@@ -79,8 +82,15 @@ class Game:
 class GameInterface:
     MinPlayer = 2
     MaxPlayer = 10
+    ActionTimeout = 1.0  # Max time for the players to answer to an action
 
     Actions = {}
+
+    class Event(Enum):
+        Update = 'update'
+        Turn = 'turn'
+        Start = 'game_started'
+        End = 'game_ended'
 
     def __init__(self, sio, owner):
         self.sio = sio
@@ -115,6 +125,7 @@ class GameInterface:
         raise NotImplementedError()
 
     async def start(self):
+        await self.sio.emit(GameInterface.Event.Start.value, (self.uuid, self.nb_player))
         async with self.lock:
             self.status = Game.Status.Running
             player_sid = list(self.players.keys())
@@ -128,13 +139,13 @@ class GameInterface:
                     await self._next_turn()
 
         print(f'Player {self.players[winners[0]].pid} won the game.')
-        await self.sio.emit('game_ended', self.players[winners[0]].pid, room=self.uuid)
+        await self.sio.emit(GameInterface.Event.End.value, self.players[winners[0]].pid, room=self.uuid)
         return winners[0]
 
     async def _next_turn(self):
         self.current_player = self.players[next(self.player_order)]
         self.current_action = None
-        target_pid = None
+        answer = None
 
         while not self.current_player.alive:
             self.current_player = self.players[next(self.player_order)]
@@ -142,16 +153,25 @@ class GameInterface:
         await self.update()
 
         try:
-            action, target_pid = await self.sio.call('turn', to=self.current_player.sid)
+            answer = await self.sio.call(GameInterface.Event.Turn.value, to=self.current_player.sid, timeout=self.ActionTimeout)
+            if len(answer) == 2:
+                action, target_pid = answer
+            else:
+                action = answer
+                target_pid = None
+        except exceptions.TimeoutError:
+            action = None
+            target_pid = None
         except TypeError as err:
             action = None
+            target_pid = None
             print(err)
 
         action = await self._deserialize_action(action)
         self.current_action = await self.validate_action(action, self.current_player.sid, target_pid)
 
         if self.current_action is None:
-            await self.eliminate(self.current_player.sid, reason='Invalid turn response')
+            await self.eliminate(self.current_player.sid, reason=f'Invalid turn response: {answer}')
         else:
             await self.next_turn(self.current_action, target_pid)
 
@@ -161,21 +181,21 @@ class GameInterface:
             state['others'] = {p.pid: {'id': p.pid, 'alive': p.alive, **p.public_state}
                                for p in self.players.values() if p.pid != player.pid}
             state['you'] = {'id': player.pid, 'alive': player.alive, **player.state}
-            await self.sio.emit('update', state, room=player.sid)
+            await self.sio.emit(GameInterface.Event.Update.value, state, room=player.sid)
 
     async def eliminate(self, target, invalid_action=True, reason=None):
         self.players[target].alive = False
         msg = f'Player {self.players[target].pid} was eliminated.'
         if invalid_action:
-            msg.strip('.')
-            msg += f' for an invalid_action.'
+            msg = msg.strip('.')
+            msg += f' for an invalid action.'
         if reason:
             msg += ' Reason: ' + reason
         print(msg)
         await self.sio.send(msg, room=self.uuid)
 
     @classmethod
-    async def deserialize_action(cls, action: dict):
+    def deserialize_action(cls, action: dict):
         # TODO replace with custom json encoder/decoder in socketio
         if not type(action) is dict:
             return
@@ -185,10 +205,12 @@ class GameInterface:
         if not issubclass(action_type, Game.Action):
             return
 
-        return action_type(*action['args'], **action['kwargs'])
+        # TODO implement action arguments
+        # return action_type(*action['args'], **action['kwargs'])
+        return action_type()
 
     async def _deserialize_action(self, action: dict):
-        action = await self.deserialize_action(action)
+        action = self.deserialize_action(action)
         if action is None:
             await self.sio.send(f'Invalid action', room=self.current_player.sid)
         return action

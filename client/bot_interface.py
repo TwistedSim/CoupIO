@@ -1,4 +1,8 @@
 from abc import ABC, abstractmethod
+from typing import Optional, Tuple, Union
+
+from games.Coup.actions import Challenge
+from games.game_interface import Game
 
 
 class BotInterface(ABC):
@@ -22,18 +26,25 @@ class BotInterface(ABC):
     async def on_update(self, game_state):
         raise NotImplementedError()
 
+
+class CoupInterface(BotInterface):
+
     @abstractmethod
-    async def on_action(self, sender, target, action_type):
+    async def on_action(self, sender, target, action_type) -> Optional[Game.Action]:
         raise NotImplementedError()
 
     @abstractmethod
-    async def on_block(self, sender, target, block_with):
+    async def on_block(self, sender, target, block_with) -> Optional[Challenge]:
         raise NotImplementedError()
 
     @abstractmethod
-    async def on_kill(self):
+    async def on_kill(self) -> Game.Action:
         raise NotImplementedError()
 
     @abstractmethod
-    async def on_swap(self, cards):
+    async def on_swap(self, target, cards) -> Optional[Union[Tuple[Game.Action], Game.Action]]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def on_lookup(self) -> Game.Action:
         raise NotImplementedError()

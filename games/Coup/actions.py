@@ -34,7 +34,7 @@ class ForeignAid(Game.Action):
 class Coup(Game.Action):
 
     async def validate(self, game, sid, target=None) -> bool:
-        return game.players[sid].state['coins'] >= 7 and target is not None
+        return game.players[sid].state['coins'] >= 7 and target is not None and sid != target
 
     async def activate(self, game, sid, target=None):
         game.players[sid].state['coins'] -= 7
@@ -64,7 +64,7 @@ class Contessa(Game.Action):
 class Captain(Game.Action):
 
     async def validate(self, game, sid, target=None):
-        return game.players[sid].state['coins'] < 10 and target is not None
+        return game.players[sid].state['coins'] < 10 and target is not None and sid != target
 
     async def activate(self, game, sid, target=None):
         amount = min(2, game.players[target].state['coins'])
@@ -75,7 +75,7 @@ class Captain(Game.Action):
 class Assassin(Game.Action):
 
     async def validate(self, game, sid, target=None):
-        return 3 <= game.players[sid].state['coins'] < 10 and target is not None
+        return 3 <= game.players[sid].state['coins'] < 10 and target is not None and sid != target
 
     async def activate(self, game, sid, target=None):
         game.players[sid].state['coins'] -= 3
@@ -89,3 +89,15 @@ class Ambassador(Game.Action):
 
     async def activate(self, game, sid, target=None):
         await game.swap(sid, 2)
+
+
+class Inquisitor(Game.Action):
+
+    async def validate(self, game, sid, target=None):
+        return True
+
+    async def activate(self, game, sid, target=None):
+        if target is None:
+            await game.swap(sid, 1)
+        else:
+            await game.lookup(sid, target)
