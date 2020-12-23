@@ -15,7 +15,7 @@ class BotInterface(ABC):
     def start_condition(self, nb_player):
         return nb_player > 2
 
-    async def start(self, nb_player):
+    async def start(self, nb_player):  # TODO add game settings
         pass
 
     @abstractmethod

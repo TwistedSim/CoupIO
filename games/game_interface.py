@@ -84,6 +84,9 @@ class GameInterface:
     MaxPlayer = 10
     ActionTimeout = 1.0  # Max time for the players to answer to an action
 
+    # TODO settings
+    # action_timeout = float
+
     Actions = {}
 
     class Event(Enum):
@@ -126,6 +129,7 @@ class GameInterface:
 
     async def start(self):
         await self.sio.emit(GameInterface.Event.Start.value, (self.uuid, self.nb_player))
+
         async with self.lock:
             self.status = Game.Status.Running
             player_sid = list(self.players.keys())
@@ -133,14 +137,21 @@ class GameInterface:
             self.player_order = cycle(player_sid)
             while self.status == Game.Status.Running:
                 winners = [p for p, v in self.players.items() if v.alive]
-                if len(winners) == 1:
+                if len(winners) < 2:
                     self.status = Game.Status.Finished
                 else:
                     await self._next_turn()
 
-        print(f'Player {self.players[winners[0]].pid} won the game.')
-        await self.sio.emit(GameInterface.Event.End.value, self.players[winners[0]].pid, room=self.uuid)
-        return winners[0]
+        if len(winners) == 1:
+            winner = winners[0]
+            print(f'Player {self.players[winner].pid} won the game.')
+            await self.sio.emit(GameInterface.Event.End.value, self.players[winner].pid, room=self.uuid)
+        else:
+            winner = None
+            print(f'Tie game')
+            await self.sio.emit(GameInterface.Event.End.value, None, room=self.uuid)
+
+        return winner
 
     async def _next_turn(self):
         self.current_player = self.players[next(self.player_order)]

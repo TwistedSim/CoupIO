@@ -53,7 +53,7 @@ class Client(socketio.AsyncClientNamespace):
         if self.bot.join_random_game:
             await self.sio.emit('find_random_game', callback=self.join_game)
         elif not self.bot.game_id:
-            await self.sio.emit('create_game', callback=self.join_game)
+            await self.sio.emit('create_game', callback=self.join_game)  # TODO pass game settings from game bot
         else:
             await self.join_game(self.bot.game_id)
 

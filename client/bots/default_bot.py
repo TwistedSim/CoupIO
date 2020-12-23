@@ -1,3 +1,4 @@
+import asyncio
 import random
 from typing import Tuple, List
 
@@ -26,6 +27,12 @@ class DefaultBot(CoupInterface):
     def alive_influences(self):
         if self.game_state:
             return tuple(CoupGame.deserialize_action(inf['action']) for inf in self.game_state['you']['influences'] if inf['alive'])
+
+    @property
+    def is_alive(self):
+        if self.game_state:
+            return len(self.alive_influences) > 0
+        return False
 
     @property
     def alive_players_id(self):
@@ -71,7 +78,7 @@ class DefaultBot(CoupInterface):
         else:
             print(f'Player {sender} use {action["type"]} on {target}')
 
-        if sender == self.my_player_id:
+        if sender == self.my_player_id or not self.is_alive:
             return
 
         # Randomly challenge other players:
@@ -95,6 +102,7 @@ class DefaultBot(CoupInterface):
         print(f'Player {sender} tried to block player {target} with {action}')
         # Randomly challenge block
         if random.random() > 0.9:
+            print(f'Challenge from {self.my_player_id}!')
             return Challenge()
 
     async def on_kill(self):

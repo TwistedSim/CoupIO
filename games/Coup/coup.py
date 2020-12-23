@@ -2,7 +2,7 @@ import asyncio
 import functools
 import random
 from enum import Enum
-from typing import Optional
+from typing import Optional, Dict
 
 from socketio import exceptions
 
@@ -35,6 +35,10 @@ class CoupGame(GameInterface):
 
     MinPlayer = 2
     MaxPlayer = 6
+
+    # TODO settings
+    # use_inquisitor = bool
+    #
 
     Actions = {
         action.__name__: action
@@ -113,9 +117,9 @@ class CoupGame(GameInterface):
             else:
                 print('Nobody challenged the block')
         if self.blocked_action:
-            print(f'Player {self.current_player.pid} action {self.current_action} was blocked. '
-                  f'Current player state: {self.current_player.state}. '
-                  f'Target player state: {self.players[target].state if target else None}')
+            print(f'Player {self.current_player.pid} action {self.current_action} was blocked.')
+            # print(f'Current player state: {self.current_player.state}. '
+            #       f'Target player state: {self.players[target].state if target else None}')
             await self.sio.send(f'Player {self.current_player.pid} action {self.current_action} was blocked.', room=self.uuid)
         else:
 
@@ -123,21 +127,32 @@ class CoupGame(GameInterface):
                 print(f'Player {self.current_player.pid} action {self.current_action} is activated')
                 await self.sio.send(f'Player {self.current_player.pid} action {self.current_action} is activated.', room=self.uuid)
                 await self.current_action.activate(self, self.current_player.sid, self.pid_to_sid(target_pid))
-                print(f'Current player state: {self.current_player.state}. '
-                      f'Target player state: {self.players[target].state if target else None}')
+                # print(f'Current player state: {self.current_player.state}. '
+                #       f'Target player state: {self.players[target].state if target else None}')
             except Exception as ex:
                 print(ex)
                 await self.sio.send('An error happened in card activation', to=self.current_player.sid)
 
     async def send_action(self, sender, target, action: Game.Action, is_block=False):
-        self.has_answer = {sid: False for sid in self.alive_players if sid != self.players[sender].sid}
+
+        target_pid = self.players[target].pid if target else None
+        sender_pid = self.players[sender].pid
+
+        # Optimization: No reaction for those action
+        if type(action) in {Coup, Income}:
+            await self.sio.emit(
+                self.Event.Action.value,
+                data=(sender_pid, target_pid, action),
+                to=self.uuid
+            )
+            return
+
+        self.has_answer = {sid: False for sid in self.alive_players if sid != sender}
 
         players_to_send = list(self.players.keys())
         random.shuffle(players_to_send)  # Do not always ask the same player first
 
         event = CoupGame.Event.Block.value if is_block else CoupGame.Event.Action.value
-        target_pid = self.players[target].pid if target else None
-        sender_pid = self.players[sender].pid
 
         self.is_resolved.clear()
         for sid in players_to_send:
@@ -161,11 +176,17 @@ class CoupGame(GameInterface):
         except asyncio.TimeoutError:
             print('Reaction has timeout')
         finally:
+            if any(not answer for answer in self.has_answer.values()):
+                await asyncio.sleep(0.05)  # make sure every player has answer has been process
+                async with self.reaction_lock:
+                    for sid, has_answer in self.has_answer.items():
+                        if not has_answer:
+                            await self.eliminate(sid, reason='Timed out during action event')
             print('Reaction is resolved')
 
-    async def _reaction_handler(self, sid, current_action: Game.Action, answer: Optional[Game.Action] = None):
+    async def _reaction_handler(self, sid, current_action: Game.Action, answer: Optional[Dict] = None):
         self.has_answer[sid] = True
-
+        print(f'Received answer {answer["type"] if answer else None} from player {self.players[sid].pid}')
         async with self.reaction_lock:
             if answer is not None and not self.is_resolved.is_set():
 
